@@ -6,7 +6,7 @@ namespace FileMover
 {
     public class Worker : BackgroundService
     {
-        public string networkPath = @"\\wopr\PlayOn";
+        public string networkPath = @"\\192.168.1.214\PlayOn";
         NetworkCredential credentials = new NetworkCredential(@"wopr", "McV93v*^6&tY");
         
         private readonly ILogger<Worker> _logger;
@@ -25,6 +25,7 @@ namespace FileMover
             var recordingFolder = new DirectoryInfo(recordingFolderPath);
 
 
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 var recordingFolderFiles = recordingFolder.GetFiles("*.mp4", SearchOption.AllDirectories);
@@ -37,27 +38,27 @@ namespace FileMover
 
                         if (age <= 2)
                         {
-                            _logger.LogInformation($"'{toMove}' is too new, {age.ToString()}");
+                            _logger.LogInformation($"'{toMove}' is too new, {age}");
                             continue;
                         }
+
+                        var isTv = toMove.Directory.Name.Contains("Season")
+                                   || toMove.Directory.GetFiles().Length > 1
+                                   || toMove.Length > 1674670080;
 
 
                         var destinationSubpath = toMove.FullName.Replace(recordingFolderPath, string.Empty, StringComparison.InvariantCultureIgnoreCase).TrimStart('\\');
 
                         DirectoryInfo channelsFolder;
                         
-                        if (toMove.Length > 1674670080)
-                        {
-                            channelsFolder = new DirectoryInfo(Path.Combine(networkPath, "Movies"));
-                        }
-                        else
-                        {
-                            channelsFolder = new DirectoryInfo(Path.Combine(networkPath, "TV"));
-                        }
+                        channelsFolder = !isTv ? new DirectoryInfo(Path.Combine(networkPath, "Movies")) : new DirectoryInfo(Path.Combine(networkPath, "TV"));
 
                         var destination = new FileInfo(Path.Combine(channelsFolder.FullName, destinationSubpath));
 
                         _logger.LogInformation($"{nameof(destination)}='{destination}'");
+
+                        var markerFile = new FileInfo(Path.Combine(toMove.Directory.FullName, "do-not-delete.txt"));
+                        if (!markerFile.Exists) await File.WriteAllTextAsync(markerFile.FullName, "this allows us to know it might be a series", stoppingToken);
 
                         using (new ConnectToSharedFolder(networkPath, credentials))
                         {
@@ -66,15 +67,8 @@ namespace FileMover
                             destination.Directory!.Create();
                             toMove.MoveTo(destination.FullName);
                             _logger.LogInformation($"Moved {toMove.FullName} to {destination.FullName}");
-                            var movedFrom = toMove.Directory;
                             toMove.Directory!.Refresh();
-                            if (!toMove.Directory.GetFiles().Any())
-                            {
-                                _logger.LogInformation($"Deleting directory {toMove.Directory.FullName}");
-                                toMove.Directory.Delete();
-                            }
                         }
-
 
                     }
                     catch (Exception e)
